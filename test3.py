@@ -1,15 +1,15 @@
 import cv2
-from cvzone.HandTrackingModule import HandDetector
 import numpy as np
+from cvzone.HandTrackingModule import HandDetector
 import time
 import random
 
 # Load the image
-main_image = cv2.imread('shit.jpg')
+main_image = cv2.imread('few.jpg')
 block_size = (200, 200)
 
-sword_image = cv2.imread('images.jpg', cv2.IMREAD_UNCHANGED)
-sword_image = cv2.resize(sword_image, (100, 100))
+sword_image = cv2.imread('sword.png', cv2.IMREAD_UNCHANGED)
+sword_image_resized = cv2.resize(sword_image, (100, 100))  # Resize sword image once
 
 # Resize the main image to be a multiple of the block size
 main_image = cv2.resize(main_image, (block_size[0] * 5, block_size[1]))
@@ -20,7 +20,7 @@ cap.set(3, 1280)
 cap.set(4, 720)
 
 # Initialize hand detector
-detector = HandDetector(detectionCon=0.8)
+detector = HandDetector(detectionCon=0.8, maxHands=2)
 
 # Create Start button
 startButtonPos = (550, 300)
@@ -30,13 +30,15 @@ start_hold_start = None
 game_started = False
 game_ended = False
 
+# Cooldown variables
+cooldown_time = 60  # 60 seconds cooldown
+last_reset_time = time.time()
+
 # Create reset button
 resetButtonPos = (1150, 20)
 resetButtonSize = (100, 50)
 
-# Cooldown variables
-cooldown_time = 10  # 60 seconds cooldown
-last_reset_time = time.time()
+
 
 class DragRect():
     def __init__(self, posCenter, size=[200, 200], img=None):
@@ -52,8 +54,22 @@ class DragRect():
             self.posCenter = cursor
 
     def reset(self):
-        self.posCenter = [random.randint(0, 1280 - self.size[0]), random.randint(0, 720 - self.size[1])]
+        while True:
+            self.posCenter = [random.randint(0, 1280 - self.size[0]), random.randint(0, 720 - self.size[1])]
+            if not self.check_overlap():  # Ensure no overlap with other blocks
+                break
         self.img = self.initialImg  # Reset to the initial image
+
+    def check_overlap(self):
+        for rect in rectList:
+            if rect != self:
+                cx, cy = rect.posCenter
+                w, h = rect.size
+                if not (self.posCenter[0] + self.size[0] <= cx or self.posCenter[0] >= cx + w or
+                        self.posCenter[1] + self.size[1] <= cy or self.posCenter[1] >= cy + h):
+                    return True
+        return False
+
 
     def hide(self):
         self.img = np.zeros_like(self.img)  # Hide by blanking out the image
@@ -68,7 +84,7 @@ class DragRect():
 
 rectList = []
 rectList_Last = []
-for x in range(5):
+for x in range(2):
     rect = DragRect([x * 250 + 150, 150], size=block_size, img=main_image[:, x * block_size[0]:(x + 1) * block_size[0]])
     rectList.append(rect)
 
@@ -86,24 +102,25 @@ while True:
     elapsed_time = current_time - last_reset_time
     cooldown_remaining = max(0, cooldown_time - elapsed_time)
     Shape = 0
+
+    
     success, img = cap.read()
     if not success:
         print("Failed to read frame from camera. Ensure the camera is connected and the correct index is used.")
         break
 
     img = cv2.flip(img, 1)
-    hands, img = detector.findHands(img)
+    hands, img = detector.findHands(img, flipType=False)
 
     if not game_started:
         # Draw Start button
         game_ended = False
         cv2.rectangle(img, startButtonPos, (startButtonPos[0] + startButtonSize[0], startButtonPos[1] + startButtonSize[1]), (0, 255, 0), cv2.FILLED)
         cv2.putText(img, 'Start Game', (startButtonPos[0] + 10, startButtonPos[1] + 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        print("Game Start !!!!!")
+
         if hands:
             lmList = hands[0]['lmList']
             cursor = lmList[8][:2]  # index finger tip landmark
-            print(startButtonPos)
             cx = startButtonPos[0]
             cy = startButtonPos[1]
             w = 200
@@ -142,12 +159,19 @@ while True:
             lmList = hands[0]['lmList']
             cursor = lmList[8][:2]  # index finger tip landmark
             l, info, img = detector.findDistance(lmList[8][:2], lmList[12][:2], img)  # distance between index and middle finger tips
-            # want sword to follow the index finger
+            
             sword_posCenter = cursor
-            sword_size = (sword_image.shape[1], sword_image.shape[0])
-            sword_width, sword_height = sword_image.shape[1], sword_image.shape[0]
-            if sword_posCenter[0] >= 0 and sword_posCenter[0] + sword_width <= 1280 and sword_posCenter[1] >= 0 and sword_posCenter[1] + sword_height <= 720:
-                img[sword_posCenter[1]:sword_posCenter[1] + sword_size[1], sword_posCenter[0]:sword_posCenter[0] + sword_size[0]] = sword_image
+            scaled_sword_size = (sword_image_resized.shape[1], sword_image_resized.shape[0])
+
+            if sword_posCenter[0] >= 0 and sword_posCenter[0] + scaled_sword_size[0] <= 1280 \
+                    and sword_posCenter[1] >= 0 and sword_posCenter[1] + scaled_sword_size[1] <= 720:
+                alpha_sliced = sword_image_resized[:, :, 3] / 255.0
+                alpha_sliced = alpha_sliced[:, :, np.newaxis]
+                img[sword_posCenter[1]:sword_posCenter[1] + scaled_sword_size[1],
+                    sword_posCenter[0]:sword_posCenter[0] + scaled_sword_size[0], :3] = \
+                    alpha_sliced * sword_image_resized[:, :, :3] + \
+                    (1 - alpha_sliced) * img[sword_posCenter[1]:sword_posCenter[1] + scaled_sword_size[1],
+                                            sword_posCenter[0]:sword_posCenter[0] + scaled_sword_size[0], :3]
 
             if detector.fingersUp(hands[0]) == [1, 1, 1, 0, 0]:  # Thumb, index, and middle fingers are up
                 thumbIndexDist, _, img = detector.findDistance(lmList[4][:2], lmList[8][:2], img)
@@ -157,7 +181,6 @@ while True:
                         for rect in rectList:
                             rect.reset()
                         last_reset_time = current_time
-
             # Check if hand is touching the image
             for rect in rectList:
                 cx, cy = rect.posCenter
@@ -167,14 +190,13 @@ while True:
                     rect.hide()  # Hide the block
                     if not np.array_equal(img_last, rect.img):
                         score += 1
-                        rectList_Last.append(img_last)
-                        print(len(rectList))
-                        print(len(rectList_Last))
-                        if (len(rectList) - len(rectList_Last) ) < 3:
+                      # Generate a new block
+                        if score % 5 == 0:
                             for reset_rect in rectList:
                                 reset_rect.reset()
                                 reset_rect.show()
-                            rectList_Last = []
+                                
+
 
         if cooldown_remaining <= 0:
             game_ended = True
@@ -198,6 +220,7 @@ while True:
         game_started = False
         score = 0
 
+    # Overlay images with transparency
     out = img.copy()
     alpha = 0.5
     mask = imgNew.astype(bool)
