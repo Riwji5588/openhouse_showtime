@@ -4,9 +4,13 @@ import numpy as np
 import time
 import random
 
+
 # Load the image
 main_image = cv2.imread('shit.jpg')
 block_size = (200, 200)
+
+sword_image = cv2.imread('images.jpg', cv2.IMREAD_UNCHANGED)
+sword_image = cv2.resize(sword_image, (100, 100)) 
 
 # Resize the main image to be a multiple of the block size
 main_image = cv2.resize(main_image, (block_size[0] * 5, block_size[1]))
@@ -63,16 +67,12 @@ for x in range(5):
 selectedRect = None
 prevCursor = None
 score = 0
-
-sword_image = cv2.imread('sword.jpg')
-
-# Function to check if hand is touching the sword image
 def check_hand_touching_sword(cursor, sword_posCenter, sword_size):
     sx, sy = sword_posCenter
     sw, sh = sword_size
-    if sx < cursor[0] < sx + sw and sy < cursor[1] < sy + sh:
-        return True
-    return False
+    return True
+    
+
 
 
 while True:
@@ -92,7 +92,22 @@ while True:
         lmList = hands[0]['lmList']
         cursor = lmList[8][:2]  # index finger tip landmark
         l, info, img = detector.findDistance(lmList[8][:2], lmList[12][:2], img)  # distance between index and middle finger tips
+        # want sword to follow the index finger
+        sword_posCenter = cursor
+        print(sword_image.shape)
+        sword_size = (sword_image.shape[1], sword_image.shape[0])
+        sword_width, sword_height = sword_image.shape[1], sword_image.shape[0]
+        if sword_posCenter[0] >= 0 and sword_posCenter[0] + sword_width <= 1280 and sword_posCenter[1] >= 0 and sword_posCenter[1] + sword_height <= 720:
+            img[sword_posCenter[1]:sword_posCenter[1] + sword_size[1],
+            sword_posCenter[0]:sword_posCenter[0] + sword_size[0]] = sword_image
 
+       
+        # if sword_posCenter[0] == 100 and sword_posCenter[1] == 100:
+        #     print("Sword is at the center")
+        # else : 
+        #     img[sword_posCenter[1]:sword_posCenter[1] + sword_size[1],
+        #     sword_posCenter[0]:sword_posCenter[0] + sword_size[0]] = sword_image
+        # Check if the index finger is close to the thum
         # Check if the reset button is pressed with three fingers and cooldown is over
         if detector.fingersUp(hands[0]) == [1, 1, 1, 0, 0]:  # Thumb, index, and middle fingers are up
             thumbIndexDist, _, img = detector.findDistance(lmList[4][:2], lmList[8][:2], img)
@@ -107,23 +122,21 @@ while True:
         for rect in rectList:
             cx, cy = rect.posCenter
             w, h = rect.size
-            print(rect.img)
+    
             if cx < cursor[0] < cx + w and cy < cursor[1] < cy + h:
-                 if check_hand_touching_sword(cursor, rect.posCenter, rect.size):
-            # Here you can manipulate the sword image or interact with it
-            # For example, hide or modify it based on game logic
-            
-                    img_last = rect.img.copy()
-                    rect.hide()  # Hide the block
+
+                img_last = rect.img.copy()
+                rect.hide()  # Hide the block
                     # Compare img_last and current rect.img
-                    if not np.array_equal(img_last, rect.img):
-                        score += 1
-                        print(score)
-                        if score % 5 == 0:
-                            for reset_rect in rectList:
-                                reset_rect.reset()
-                                reset_rect.show()
-       
+                if not np.array_equal(img_last, rect.img):
+                    score += 1
+                    print(score)
+                    if score % 5 == 0:
+                        for reset_rect in rectList:
+                            reset_rect.reset()
+                            reset_rect.show()
+                    
+    
 
     # Draw Transparency
     imgNew = np.zeros_like(img, np.uint8)
