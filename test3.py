@@ -7,7 +7,7 @@ import os
 import pandas as pd
 
 # Paths and settings
-main_image_path = 'IMG_5496.png'
+main_image_path = 'future_entity.png'
 sword_image_path = 'sword.png'
 image_save_path = './img'
 excel_file_path = './excel/game_scores.xlsx'
@@ -26,11 +26,14 @@ if sword_image is None:
     exit(1)
 
 # Resize the main image to be a multiple of the block size
-main_image = cv2.resize(main_image, (block_size[0] * 5, block_size[1]))
+
+main_image = cv2.resize(main_image, block_size)
+
+
 
 # Initialize the camera and set dimensions
 cap = cv2.VideoCapture(0)
-cap.set(3, 1280)
+cap.set(3, 1280)  
 cap.set(4, 720)
 
 # Initialize hand detector
@@ -147,6 +150,9 @@ def save_score_to_excel(image_filename, score):
         df = pd.concat([df_existing, df], ignore_index=True)
     df.to_excel(excel_file_path, index=False)
 
+def futureMaki_HakiMode():
+    rectList.clear()
+
 while True:
     current_time = time.time()
     elapsed_time = current_time - last_reset_time
@@ -161,6 +167,7 @@ while True:
     hands, img = detector.findHands(img, flipType=False)
 
     if not game_started:
+        rectList.clear()
         # Draw Start button
         game_ended = False
         cv2.rectangle(img, startButtonPos, (startButtonPos[0] + startButtonSize[0], startButtonPos[1] + startButtonSize[1]), (0, 255, 0), cv2.FILLED)
@@ -182,7 +189,7 @@ while True:
                     if image_filename:
                         game_started = True
                         for x in range(5):
-                            rect = DragRect([x * 250 + 150, 150], size=block_size, img=main_image[:, x * block_size[0]:(x + 1) * block_size[0]])
+                            rect = DragRect([x * 250 + 150, 150], size=block_size, img=main_image)
                             rectList.append(rect)
                         last_reset_time = time.time()
                         start_hold_start = None
@@ -231,48 +238,53 @@ while True:
                             rect.reset()
                         last_reset_time = current_time
             # Check if hand is touching the image
-            for rect in rectList:
+            i = 0
+            for rect  in rectList:
                 cx, cy = rect.posCenter
                 w, h = rect.size
                 if cx < cursor[0] < cx + w and cy < cursor[1] < cy + h:
                     img_last = rect.img.copy()
-                    rect.hide()  # Hide the block
-                    if not np.array_equal(img_last, rect.img):
+                    num_lastarray = len(rectList)
+                    rectList.pop(i)
+                    num_array = len(rectList)
+                    # rect.hide()  # Hide the block
+                    if num_array != num_lastarray:
                         score += 1
                       # Generate a new block
                         if score % 5 == 0:
-                            for reset_rect in rectList:
-                                reset_rect.reset()
-                                reset_rect.show()
+                            for x in range(5):
+                                rect = DragRect([x * 250 + 150, 150], size=block_size, img=main_image)
+                                rectList.append(rect)
+                i += 1
 
         if cooldown_remaining <= 0:
             game_ended = True
             save_score_to_excel(image_filename, score)
 
     # Draw Transparency
-    imgNew = np.zeros_like(img, np.uint8)
     for rect in rectList:
         cx, cy = rect.posCenter
         w, h = rect.size
-        imgNew[cy:cy + h, cx:cx + w] = rect.img
+        if rect.img is not None:
+            img[cy:cy + h, cx:cx + w] = rect.img
 
     # Draw score
-    cv2.putText(imgNew, f"Score: {score}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+    cv2.putText(img, f"Score: {score}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
     # Draw cooldown timer in top right corner
     if not game_ended:
-        cv2.putText(imgNew, f"Cooldown: {int(cooldown_remaining)}s", (1000, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.putText(img, f"Cooldown: {int(cooldown_remaining)}s", (1000, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
     else:
-        cv2.putText(imgNew, f"Final Score: {score}", (400, 300), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3)
-        cv2.putText(imgNew, "Game Over", (500, 400), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 3)
+        cv2.putText(img, f"Final Score: {score}", (400, 300), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3)
+        cv2.putText(img, "Game Over", (500, 400), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 3)
         game_started = False
         score = 0
 
     # Overlay images with transparency
     out = img.copy()
     alpha = 0   # set effect of the image
-    mask = imgNew.astype(bool)
-    out[mask] = cv2.addWeighted(img, alpha, imgNew, 1 - alpha, 0)[mask]
+    mask = img.astype(bool)
+    out[mask] = cv2.addWeighted(img, alpha, img, 1 - alpha, 0)[mask]
 
     cv2.imshow("Image", out)
     if cv2.waitKey(1) & 0xFF == ord('q'):
