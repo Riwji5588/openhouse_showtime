@@ -13,6 +13,10 @@ def play_sound(filename):
 # Paths and settings
 main_image_path = 'future_entity.png'
 sword_image_path = 'sword.png'
+
+boos_immue_image_path = 'boss_immue.png'
+boos_noob_image_path = 'boss_noob.png'
+
 image_save_path = './img'
 excel_file_path = './excel/game_scores.xlsx'
 block_size = (200, 200)
@@ -20,6 +24,11 @@ isFUTUREBoss = False
 
 # Load the main image with alpha channel
 main_image = cv2.imread(main_image_path, cv2.IMREAD_UNCHANGED)
+
+boos_immue_image = cv2.imread(boos_immue_image_path, cv2.IMREAD_UNCHANGED)
+
+boos_noob_image = cv2.imread(boos_noob_image_path, cv2.IMREAD_UNCHANGED)
+
 if main_image is None:
     print(f"Error: Unable to load image at {main_image_path}")
     exit(1)
@@ -33,13 +42,17 @@ if sword_image is None:
 # Resize the main image to be a multiple of the block size
 main_image = cv2.resize(main_image, block_size)
 
+boos_immue_image = cv2.resize(boos_immue_image, block_size)
+
+boos_noob_image = cv2.resize(boos_noob_image, block_size)
+
 # Initialize the camera and set dimensions
 cap = cv2.VideoCapture(0)
 cap.set(3, 1280)
 cap.set(4, 720)
 
 # Initialize hand detector
-detector = HandDetector(detectionCon=0.8, maxHands=2)
+detector = HandDetector(detectionCon=0.8, maxHands=1)
 
 # Create Start button
 startButtonPos = (550, 300)
@@ -71,10 +84,13 @@ class DragRect():
             self.posCenter = cursor
 
     def reset(self):
-        while True:
+        if self.img is not None:
+            while True:
+                self.posCenter = [random.randint(0, 1280 - self.size[0]), random.randint(0, 720 - self.size[1])]
+                if not self.check_overlap():  # Ensure no overlap with other blocks
+                    break
+        else:
             self.posCenter = [random.randint(0, 1280 - self.size[0]), random.randint(0, 720 - self.size[1])]
-            if not self.check_overlap():  # Ensure no overlap with other blocks
-                break
         self.img = self.initialImg  # Reset to the initial image
 
     def check_overlap(self):
@@ -98,6 +114,7 @@ class DragRect():
         else:
             self.img = main_image[:, self.posCenter[0]:self.posCenter[0] + self.size[0], self.posCenter[1]:self.posCenter[1] + self.size[1]]
 
+
 rectList = []
 rectList_Last = []
 for x in range(2):
@@ -107,6 +124,7 @@ for x in range(2):
 selectedRect = None
 prevCursor = None
 score = 0
+boss_status = False
 
 def check_hand_touching_sword(cursor, sword_posCenter, sword_size):
     sx, sy = sword_posCenter
@@ -161,6 +179,29 @@ def futureMaki_HakiMode():
     for reset_rect in rectList:
         reset_rect.reset()
         reset_rect.show()
+
+def futureMaki_hakiMode_sound():
+    global boss_status, score
+    
+    print("Current boss status:", boss_status)  # ตรวจสอบสถานะบอสที่ถูกพิมพ์ออกมาเพื่อตรวจสอบเพื่อให้แน่ใจ
+    
+    if not boss_status:
+        random_number = random.randint(0, 99)
+        if random_number % 2 == 0:
+            thread = threading.Thread(target=play_sound, args=('sound/immue_bossphase.mp3',))
+            thread.start()
+        else:
+            thread = threading.Thread(target=play_sound, args=('sound/immue_bossphase_2.mp3',))
+            thread.start()
+    else:
+        random_number = random.randint(0, 99)
+        if random_number % 2 == 0:
+            thread = threading.Thread(target=play_sound, args=('sound/attack_bossphase.mp3',))
+            thread.start()
+        else:
+            thread = threading.Thread(target=play_sound, args=('sound/attack_bossphase_2.mp3',))
+            thread.start()
+        score += 1  # เพิ่มคะแนนทีละ 1 เมื่อบอสถูกโจมตี
 
 
 while True:
@@ -254,6 +295,7 @@ while True:
                 w, h = rect.size
                 if cx < cursor[0] < cx + w and cy < cursor[1] < cy + h:
                     img_last = rect.img.copy()
+                    futureMaki_hakiMode_sound()
                     num_lastarray = len(rectList)
                     rectList.pop(i)
                     num_array = len(rectList)
@@ -261,24 +303,39 @@ while True:
                     if num_array != num_lastarray:
                         if not isFUTUREBoss:
                             score += 1
-                            thread = threading.Thread(target=play_sound, args=('sound_attack.m4a',))
+                            thread = threading.Thread(target=play_sound, args=('sound/sound_attack.mp3',))
                             thread.start()
                       # Generate a new block
-                        if score % 5 == 0:
+                        if score % 5 == 0 and not isFUTUREBoss:
                             for x in range(5):
                                 rect = DragRect([x * 250 + 150, 150], size=block_size, img=main_image)
                                 rectList.append(rect)
                         elif isFUTUREBoss:
-                            rectList.clear()
-                            rect = DragRect([x * 250 + 150, 150], size=block_size, img=main_image)
-                            rectList.append(rect)
-
+                            #random number
+                            random_number = random.randint(1, 99)
+                            print( "Number : ", random_number)
+                            if random_number % 2 == 0: 
+                                boss_status = False # สถานะบอสเป็น False หรือไม่ได้โจมตี
+                                rectList.clear()
+                                rect = DragRect([x * 250 + 150, 150], size=block_size, img=boos_immue_image)
+                                rectList.append(rect)
+                                
+                                
+                                print("Status : " , boss_status)
+                            else:
+                                boss_status = True # สถานะบอสเป็น True หรือโจมตี
+                                rectList.clear()
+                                rect = DragRect([x * 250 + 150, 150], size=block_size, img=boos_noob_image)
+                                rectList.append(rect)
+                               
+                           
                             for reset_rect in rectList:
                                 reset_rect.reset()
                                 reset_rect.show()
+                    # time.sleep(0.1)
 
                 i += 1
-        if cooldown_remaining <= 55 and cooldown_remaining>0: #initial FutureMaki_HakiMode
+        if cooldown_remaining <= 55: #initial FutureMaki_HakiMode
             isFUTUREBoss = True
         if cooldown_remaining <= 0:
             game_ended = True
