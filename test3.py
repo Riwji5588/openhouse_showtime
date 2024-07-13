@@ -5,35 +5,37 @@ import time
 import random
 import os
 import pandas as pd
+from playsound import playsound
+import threading
 
+def play_sound(filename):
+    playsound(filename)
 # Paths and settings
 main_image_path = 'future_entity.png'
 sword_image_path = 'sword.png'
 image_save_path = './img'
 excel_file_path = './excel/game_scores.xlsx'
 block_size = (200, 200)
+isFUTUREBoss = False
 
-# Load the main image
-main_image = cv2.imread(main_image_path)
+# Load the main image with alpha channel
+main_image = cv2.imread(main_image_path, cv2.IMREAD_UNCHANGED)
 if main_image is None:
     print(f"Error: Unable to load image at {main_image_path}")
     exit(1)
 
-# Load the sword image
+# Load the sword image with alpha channel
 sword_image = cv2.imread(sword_image_path, cv2.IMREAD_UNCHANGED)
 if sword_image is None:
     print(f"Error: Unable to load image at {sword_image_path}")
     exit(1)
 
 # Resize the main image to be a multiple of the block size
-
 main_image = cv2.resize(main_image, block_size)
-
-
 
 # Initialize the camera and set dimensions
 cap = cv2.VideoCapture(0)
-cap.set(3, 1280)  
+cap.set(3, 1280)
 cap.set(4, 720)
 
 # Initialize hand detector
@@ -151,7 +153,15 @@ def save_score_to_excel(image_filename, score):
     df.to_excel(excel_file_path, index=False)
 
 def futureMaki_HakiMode():
+    global rectList
+    global rect
     rectList.clear()
+    rect = DragRect([x * 250 + 150, 150], size=block_size, img=main_image)
+    rectList.append(rect)
+    for reset_rect in rectList:
+        reset_rect.reset()
+        reset_rect.show()
+
 
 while True:
     current_time = time.time()
@@ -249,24 +259,39 @@ while True:
                     num_array = len(rectList)
                     # rect.hide()  # Hide the block
                     if num_array != num_lastarray:
-                        score += 1
+                        if not isFUTUREBoss:
+                            score += 1
+                            thread = threading.Thread(target=play_sound, args=('sound_attack.m4a',))
+                            thread.start()
                       # Generate a new block
                         if score % 5 == 0:
                             for x in range(5):
                                 rect = DragRect([x * 250 + 150, 150], size=block_size, img=main_image)
                                 rectList.append(rect)
-                i += 1
+                        elif isFUTUREBoss:
+                            rectList.clear()
+                            rect = DragRect([x * 250 + 150, 150], size=block_size, img=main_image)
+                            rectList.append(rect)
 
+                            for reset_rect in rectList:
+                                reset_rect.reset()
+                                reset_rect.show()
+
+                i += 1
+        if cooldown_remaining <= 55 and cooldown_remaining>0: #initial FutureMaki_HakiMode
+            isFUTUREBoss = True
         if cooldown_remaining <= 0:
             game_ended = True
+            isFUTUREBoss = False
             save_score_to_excel(image_filename, score)
-
     # Draw Transparency
     for rect in rectList:
         cx, cy = rect.posCenter
         w, h = rect.size
         if rect.img is not None:
-            img[cy:cy + h, cx:cx + w] = rect.img
+            alpha = rect.img[:, :, 3] / 255.0  # Alpha channel
+            for c in range(0, 3):
+                img[cy:cy + h, cx:cx + w, c] = img[cy:cy + h, cx:cx + w, c] * (1 - alpha) + rect.img[:, :, c] * alpha
 
     # Draw score
     cv2.putText(img, f"Score: {score}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
