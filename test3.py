@@ -3,13 +3,27 @@ import numpy as np
 from cvzone.HandTrackingModule import HandDetector
 import time
 import random
+import os
+import pandas as pd
 
-# Load the image
-main_image = cv2.imread('few.jpg')
+# Paths and settings
+main_image_path = 'IMG_5496.png'
+sword_image_path = 'sword.png'
+image_save_path = './img'
+excel_file_path = './excel/game_scores.xlsx'
 block_size = (200, 200)
 
-sword_image = cv2.imread('sword.png', cv2.IMREAD_UNCHANGED)
-sword_image_resized = cv2.resize(sword_image, (100, 100))  # Resize sword image once
+# Load the main image
+main_image = cv2.imread(main_image_path)
+if main_image is None:
+    print(f"Error: Unable to load image at {main_image_path}")
+    exit(1)
+
+# Load the sword image
+sword_image = cv2.imread(sword_image_path, cv2.IMREAD_UNCHANGED)
+if sword_image is None:
+    print(f"Error: Unable to load image at {sword_image_path}")
+    exit(1)
 
 # Resize the main image to be a multiple of the block size
 main_image = cv2.resize(main_image, (block_size[0] * 5, block_size[1]))
@@ -33,12 +47,10 @@ game_ended = False
 # Cooldown variables
 cooldown_time = 60  # 60 seconds cooldown
 last_reset_time = time.time()
-
+sword_image_resized = cv2.resize(sword_image, (100, 100))
 # Create reset button
 resetButtonPos = (1150, 20)
 resetButtonSize = (100, 50)
-
-
 
 class DragRect():
     def __init__(self, posCenter, size=[200, 200], img=None):
@@ -70,7 +82,6 @@ class DragRect():
                     return True
         return False
 
-
     def hide(self):
         self.img = np.zeros_like(self.img)  # Hide by blanking out the image
 
@@ -97,13 +108,50 @@ def check_hand_touching_sword(cursor, sword_posCenter, sword_size):
     sw, sh = sword_size
     return True
 
+def notify_player():
+    # Display a message on the screen to notify the player
+    notification_start_time = time.time()
+    while time.time() - notification_start_time < 3:  # Show message for 3 seconds
+        success, img = cap.read()
+        if not success:
+            print("Failed to read frame from camera. Ensure the camera is connected and the correct index is used.")
+            break
+        img = cv2.flip(img, 1)
+        cv2.putText(img, "Get Ready! Capturing Image...", (300, 350), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        cv2.imshow("Image", img)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+def capture_image():
+    # Capture an image and save it to the specified directory
+    success, img = cap.read()
+    if success:
+        img = cv2.flip(img, 1)
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        filename = f"{image_save_path}/player_image_{timestamp}.png"
+        cv2.imwrite(filename, img)
+        return filename
+    else:
+        print("Failed to capture image.")
+        return None
+
+def save_score_to_excel(image_filename, score):
+    # Save the image filename and score to an Excel file
+    data = {
+        'Image Filename': [image_filename],
+        'Score': [score]
+    }
+    df = pd.DataFrame(data)
+    if os.path.exists(excel_file_path):
+        df_existing = pd.read_excel(excel_file_path)
+        df = pd.concat([df_existing, df], ignore_index=True)
+    df.to_excel(excel_file_path, index=False)
+
 while True:
     current_time = time.time()
     elapsed_time = current_time - last_reset_time
     cooldown_remaining = max(0, cooldown_time - elapsed_time)
-    Shape = 0
 
-    
     success, img = cap.read()
     if not success:
         print("Failed to read frame from camera. Ensure the camera is connected and the correct index is used.")
@@ -129,26 +177,27 @@ while True:
                 if start_hold_start is None:
                     start_hold_start = time.time()
                 elif time.time() - start_hold_start > start_hold_time:
-                    game_started = True
-                    for x in range(5):
-                        rect = DragRect([x * 250 + 150, 150], size=block_size, img=main_image[:, x * block_size[0]:(x + 1) * block_size[0]])
-                        rectList.append(rect)
-                    last_reset_time = time.time()
-                    start_hold_start = None
+                    notify_player()
+                    image_filename = capture_image()
+                    if image_filename:
+                        game_started = True
+                        for x in range(5):
+                            rect = DragRect([x * 250 + 150, 150], size=block_size, img=main_image[:, x * block_size[0]:(x + 1) * block_size[0]])
+                            rectList.append(rect)
+                        last_reset_time = time.time()
+                        start_hold_start = None
 
             if cx < cursor[0] < cx + w and cy < cursor[1] < cy + h:
-                    img_last = rect.img.copy()
-                    rect.hide()  # Hide the block
-                    if not np.array_equal(img_last, rect.img):
-                        score += 1
-                        print(score)
-                        if score % 5 == 0:
-                            for reset_rect in rectList:
-                                reset_rect.reset()
-                                reset_rect.show()
+                img_last = rect.img.copy()
+                rect.hide()  # Hide the block
+                if not np.array_equal(img_last, rect.img):
+                    if score % 5 == 0:
+                        for reset_rect in rectList:
+                            reset_rect.reset()
+                            reset_rect.show()
             else:
                 start_hold_start = None
-        
+
         cv2.imshow("Image", img)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
@@ -195,11 +244,10 @@ while True:
                             for reset_rect in rectList:
                                 reset_rect.reset()
                                 reset_rect.show()
-                                
-
 
         if cooldown_remaining <= 0:
             game_ended = True
+            save_score_to_excel(image_filename, score)
 
     # Draw Transparency
     imgNew = np.zeros_like(img, np.uint8)
@@ -222,7 +270,7 @@ while True:
 
     # Overlay images with transparency
     out = img.copy()
-    alpha = 0.5
+    alpha = 0   # set effect of the image
     mask = imgNew.astype(bool)
     out[mask] = cv2.addWeighted(img, alpha, imgNew, 1 - alpha, 0)[mask]
 
