@@ -20,6 +20,7 @@ boos_noob_image_path = 'boss_noob.png'
 image_save_path = './img'
 excel_file_path = './excel/game_scores.xlsx'
 block_size = (200, 200)
+block_size_boss = (300, 300)
 isFUTUREBoss = False
 
 # Load the main image with alpha channel
@@ -63,7 +64,7 @@ game_started = False
 game_ended = False
 
 # Cooldown variables
-cooldown_time = 60  # 60 seconds cooldown
+cooldown_time = 30  # 60 seconds cooldown
 last_reset_time = time.time()
 sword_image_resized = cv2.resize(sword_image, (100, 100))
 # Create reset button
@@ -124,6 +125,8 @@ for x in range(2):
 selectedRect = None
 prevCursor = None
 score = 0
+MAXscore = 98
+lastscore=0
 boss_status = False
 
 def check_hand_touching_sword(cursor, sword_posCenter, sword_size):
@@ -141,7 +144,7 @@ def notify_player():
             break
         img = cv2.flip(img, 1)
         cv2.putText(img, "Get Ready! Capturing Image...", (300, 350), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        cv2.imshow("Image", img)
+        cv2.imshow("Future_Slasher", img)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
@@ -201,8 +204,7 @@ def futureMaki_hakiMode_sound():
         else:
             thread = threading.Thread(target=play_sound, args=('sound/attack_bossphase_2.mp3',))
             thread.start()
-        score += 1  # เพิ่มคะแนนทีละ 1 เมื่อบอสถูกโจมตี
-
+        score += 5  # เพิ่มคะแนนทีละ 1 เมื่อบอสถูกโจมตี
 
 while True:
     current_time = time.time()
@@ -224,8 +226,14 @@ while True:
         cv2.rectangle(img, startButtonPos, (startButtonPos[0] + startButtonSize[0], startButtonPos[1] + startButtonSize[1]), (0, 255, 0), cv2.FILLED)
         cv2.putText(img, 'Start Game', (startButtonPos[0] + 10, startButtonPos[1] + 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
-        if hands:
-            lmList = hands[0]['lmList']
+        #show last_score
+        cv2.putText(img, f"MAX Score: {MAXscore}", (540, 270), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 3)
+        cv2.putText(img, f"Last Score: {lastscore}", (540, 470), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 3)
+
+        if hands and (hands[0]['type'] == 'Right' or hands[0]['type'] == 'Left'):
+            lmList = hands[0]['lmList'] 
+            # print()
+            
             cursor = lmList[8][:2]  # index finger tip landmark
             cx = startButtonPos[0]
             cy = startButtonPos[1]
@@ -256,13 +264,13 @@ while True:
             else:
                 start_hold_start = None
 
-        cv2.imshow("Image", img)
+        cv2.imshow("Future_Slasher", img)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
         continue
 
     if game_started and not game_ended:
-        if hands:
+        if hands and hands[0]['type'] == 'Right':
             lmList = hands[0]['lmList']
             cursor = lmList[8][:2]  # index finger tip landmark
             l, info, img = detector.findDistance(lmList[8][:2], lmList[12][:2], img)  # distance between index and middle finger tips
@@ -295,7 +303,7 @@ while True:
                 w, h = rect.size
                 if cx < cursor[0] < cx + w and cy < cursor[1] < cy + h:
                     img_last = rect.img.copy()
-                    futureMaki_hakiMode_sound()
+                    
                     num_lastarray = len(rectList)
                     rectList.pop(i)
                     num_array = len(rectList)
@@ -303,8 +311,19 @@ while True:
                     if num_array != num_lastarray:
                         if not isFUTUREBoss:
                             score += 1
-                            thread = threading.Thread(target=play_sound, args=('sound/sound_attack.mp3',))
-                            thread.start()
+                            random_number = random.randint(0, 99)
+                            if random_number % 2 == 0:
+                                thread = threading.Thread(target=play_sound, args=('sound/attack_bossphase.mp3',))
+                                thread.start()
+                            elif random_number % 3 == 0:
+                                thread = threading.Thread(target=play_sound, args=('sound/attack_bossphase_2.mp3',))
+                                thread.start()
+                            elif random_number % 5 == 0:
+                                thread = threading.Thread(target=play_sound, args=('sound/sound_attack.mp3',))
+                                thread.start()
+                            else : 
+                                thread = threading.Thread(target=play_sound, args=('sound/attack_bossphase_3.m4a',))
+                                thread.start()
                       # Generate a new block
                         if score % 5 == 0 and not isFUTUREBoss:
                             for x in range(5):
@@ -312,12 +331,13 @@ while True:
                                 rectList.append(rect)
                         elif isFUTUREBoss:
                             #random number
+                            futureMaki_hakiMode_sound()
                             random_number = random.randint(1, 99)
                             print( "Number : ", random_number)
-                            if random_number % 2 == 0: 
+                            if random_number % 2 == 0 or random_number % 3 == 0: 
                                 boss_status = False # สถานะบอสเป็น False หรือไม่ได้โจมตี
                                 rectList.clear()
-                                rect = DragRect([x * 250 + 150, 150], size=block_size, img=boos_immue_image)
+                                rect = DragRect([x * 250 + 150, 150], size=block_size_boss, img=boos_immue_image)
                                 rectList.append(rect)
                                 
                                 
@@ -325,7 +345,7 @@ while True:
                             else:
                                 boss_status = True # สถานะบอสเป็น True หรือโจมตี
                                 rectList.clear()
-                                rect = DragRect([x * 250 + 150, 150], size=block_size, img=boos_noob_image)
+                                rect = DragRect([x * 250 + 150, 150], size=block_size_boss, img=boos_noob_image)
                                 rectList.append(rect)
                                
                            
@@ -335,12 +355,17 @@ while True:
                     # time.sleep(0.1)
 
                 i += 1
-        if cooldown_remaining <= 55: #initial FutureMaki_HakiMode
+        if cooldown_remaining <= 20: #initial FutureMaki_HakiMode
             isFUTUREBoss = True
         if cooldown_remaining <= 0:
             game_ended = True
             isFUTUREBoss = False
+            boss_status = False
+            lastscore = score
+            if score > MAXscore:
+                MAXscore = score
             save_score_to_excel(image_filename, score)
+
     # Draw Transparency
     for rect in rectList:
         cx, cy = rect.posCenter
@@ -368,7 +393,7 @@ while True:
     mask = img.astype(bool)
     out[mask] = cv2.addWeighted(img, alpha, img, 1 - alpha, 0)[mask]
 
-    cv2.imshow("Image", out)
+    cv2.imshow("Future_Slasher", out)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
